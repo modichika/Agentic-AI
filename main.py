@@ -1,5 +1,9 @@
+# PART-1
 # #The Brain - selecting a chat model
-# LOAD -> SPLIT -> EMBED -> RETRIEVE.
+# LOAD -> SPLIT -> EMBED -> RETRIEVE. AI is asleep in these phases. These phases are handled by my script.
+# The LLM does not knows or runs my python code.
+
+
 import os
 from dotenv import load_dotenv
 
@@ -17,6 +21,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_milvus import Milvus
 from langchain.tools import tool
+from langgraph.graph import MessagesState
+from langchain.chat_models import init_chat_model
 
 def load_web_documents(urls: list):
     """
@@ -33,12 +39,35 @@ def load_web_documents(urls: list):
 
 # Tool for the langgraph
 @tool  # The interface between the custom logic and AI's thinking.
-def retrieve_blog_posts(query: str) -> str:
+def retrieve_blog_posts(query: str) -> str:  # query is an args as a JSON object.
     """
     Search and return information about Lilian Weng blog posts.
     """
-    docs = retriever.invoke(query)
+    docs = retriever.invoke(query) # Script sends the JSON schema to OpenAI
     return "\n\n".join([doc.page_content for doc in docs])
+    
+retriever_tool = retrieve_blog_posts
+
+
+# THINKING OF AI MODEL HAPPENS.
+# Generating Query. Graph node. - # PART-2 - Autonomous Agent - that thinks before acting. The LANGGRAPH LOGIC
+# Includes MessagesState makes it easy to use messages
+
+response_model = init_chat_model("gpt-5-nano", temperature=0) # Initialize the model
+
+def generate_query_or_respond(state: MessagesState):
+    """
+    Call the model to generate a response based on the current state. Given
+    the question, it will decide to retrieve using the retriever tool, or simply respond to the user.
+    """
+     
+     # We bind the tool with the response_model so that it can decide whether to proceed or use the tool.
+
+    response = (
+        response_model.bind_tools([retriever_tool]).invoke(state["messages"]) # .invoke the messages from the langgraph state, we sent a hidden instruction to the OpenAI by using the .bind_tools([retriever_tool]). Returns an AIMessage Object.
+    )
+    return {"messages": [response]} # Return the new message to be added to the state
+
 
 # The execution
 
@@ -69,9 +98,9 @@ if __name__ == "__main__": # python standard only run the code inside here if i 
     # print(doc_splits[0].page_content.strip()) # strips the whole page content we might set a limit like 1000 or even leave like this.
     # print(f"Total chunks created: {len(doc_splits)}")
 
-# Select an embeddigns model, Select a vector store the memory:
+# Select an embeddigns model, Select a vector store the memory to turn the text into vectors numbers.:
 
-    URI = "./milvus_example.db"
+    URI = "milvus_example.db"
 
     vector_store = Milvus.from_documents(
         documents=doc_splits,
@@ -82,11 +111,17 @@ if __name__ == "__main__": # python standard only run the code inside here if i 
     # Convert it into the Retriever tool for LangGraph
     retriever = vector_store.as_retriever(search_kwargs={"k": 3})
 
-    print("Testing Tool...")
-    result = retrieve_blog_posts.invoke({"query": "types of reward hacking"})
-    print(f"Reward Hacking Result: {result[:1000]}... {len(result)}")
+    # print("Testing Tool...")
+    # result = retriever_tool.invoke({"query": "types of reward hacking"})
+    # print(f"Reward Hacking Result: {result[:1000]}... {len(result)}\n\n")
 
+    # For testing the Node - 1 - generate_query_or_respond 
+    # Can write the content as : "Hello!" or a question about blog posts.
+    test_input = {"messages": [{"role": "user", "content": "What does Lilian Weng say about types of reward hacking?",}]} # Faking the state to see if the function works. Must match with MessagesState. This will generate a tool call Object not a text sentence or an answer.
+    output = generate_query_or_respond(test_input)
 
-
+    print(" AI Response Test --- ")
+    output["messages"][-1].pretty_print() # We need AI response so [-1] always have AI response at the very end of messages list since langgraph appends messages.
+    # .pretty_print() organizes the messy object to a clean AI response.
 
 
