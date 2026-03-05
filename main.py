@@ -69,6 +69,56 @@ def generate_query_or_respond(state: MessagesState):
     return {"messages": [response]} # Return the new message to be added to the state
 
 
+# GRADING DOCUMENTS
+
+from pydantic import BaseModel, Field
+from typing import Literal
+from langchain_core.messages import convert_to_messages
+
+GRADE_PROMPT = (
+    "You are a grader assessing relevance of a retrieved document to a user question. \n"
+    "Here is the retrieved document: \n\n {context} \n\n"
+    "Here is the user question: {question} \n"
+    "If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant. \n"
+    "Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question."
+)
+
+# Pytdantic is like zod for data validation, BaseModel is a class that serves as a foundation for defining data models using python type annotations. Data must be in the specified structure in class GradeDocuments that inherits BaseModel class so that all inputs match this data specified.
+class GradeDocuments(BaseModel):
+    """Grade documents using a binary score for relevance check."""
+    
+    binary_score: str = Field(
+        description="Relevance score: 'yes' if relevant, or 'no' if not relevant"
+    )
+
+grader_model = init_chat_model("gpt-5-nano", temperature=0)
+
+# The router of data that decides where should the data go next
+def grade_documents(
+    state: MessagesState,
+) -> Literal["generate_answer", "rewrite_question"]:
+    """Determine whether the retrieved documents are relevant to the question."""
+    question = state["messages"][0].content # 1st message is the question
+    context = state["messages"][1].content  # 2nd message is the retrieved Text
+    
+    prompt = GRADE_PROMPT.format(question=question, context=context)
+    response = (
+        grader_model
+        .with_structured_output(GradeDocuments).invoke(
+            [{"role": "user", "content": prompt}]
+        )
+    )
+    
+    score = response.binary_score
+    # The Edge of the graph
+    if score == "yes":
+        return "generate_answer"
+    else:
+        return "rewrite_question" # Fix the question and search again
+    
+    
+
+
 # The execution
 
 if __name__ == "__main__": # python standard only run the code inside here if i run python main.py
@@ -123,5 +173,34 @@ if __name__ == "__main__": # python standard only run the code inside here if i 
     print(" AI Response Test --- ")
     output["messages"][-1].pretty_print() # We need AI response so [-1] always have AI response at the very end of messages list since langgraph appends messages.
     # .pretty_print() organizes the messy object to a clean AI response.
-
+    
+    input = {
+        "messages": convert_to_messages(
+            [
+                {
+                    "role": "user",
+                    "content": "What does Lilian Wang say about types of reward hacking?",
+                },
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "1",
+                            "name": "retrieve_blog_posts",
+                            "args": {"query": "types of reward hacking"},
+                        }
+                    ],
+                },
+                {"role": "tool", "content": "meow", "tool_call_id": "1"},
+            ]
+        )
+    }
+    
+    output = grade_documents(input)
+    print(f"Check whether the retrieved docs is relevant to the user question ---\n  {output}")
+    
+    
+    
+    
 
