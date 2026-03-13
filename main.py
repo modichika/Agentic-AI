@@ -29,8 +29,16 @@ def load_web_documents(urls: list):
     Takes a list of URLs and returns a flat list of LangChain documents.
     """
     print(f"Fetching data from {len(urls)} URLs...")
+    
+    bs4_strainer = bs4.SoupStrainer(class_=("post-title", "post-header", "post-content"))
 
-    nested_docs = [WebBaseLoader(url).load() for url in urls] # becomes a list of lists -- [[Doc1], [Doc2], [Doc3]]
+    nested_docs = [] # becomes a list of lists -- [[Doc1], [Doc2], [Doc3]]
+    for url in urls:
+        loader = WebBaseLoader(
+            web_paths=(url,),
+            bs_kwargs={"parse_only": bs4_strainer}
+        )
+        nested_docs.append(loader.load())
 
     flat_docs = [doc for sublist in nested_docs for doc in sublist] # flatten the list of lists -- ([Doc1, Doc2, Doc3])
 
