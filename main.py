@@ -49,7 +49,7 @@ def retrieve_blog_posts(query: str) -> str:  # query is an args as a JSON object
 retriever_tool = retrieve_blog_posts
 
 
-# THINKING OF AI MODEL HAPPENS.
+# THINKING OF AI MODEL about whether to answer or skip HAPPENS The Node - 1. The assistant 
 # Generating Query. Graph node. - # PART-2 - Autonomous Agent - that thinks before acting. The LANGGRAPH LOGIC
 # Includes MessagesState makes it easy to use messages
 
@@ -66,7 +66,7 @@ def generate_query_or_respond(state: MessagesState):
     response = (
         response_model.bind_tools([retriever_tool]).invoke(state["messages"]) # .invoke the messages from the langgraph state, we sent a hidden instruction to the OpenAI by using the .bind_tools([retriever_tool]). Returns an AIMessage Object.
     )
-    return {"messages": [response]} # Return the new message to be added to the state
+    return {"messages": [response]} # Return the new message to be added to the state. User's history
 
 
 # GRADING DOCUMENTS
@@ -79,11 +79,11 @@ GRADE_PROMPT = (
     "You are a grader assessing relevance of a retrieved document to a user question. \n"
     "Here is the retrieved document: \n\n {context} \n\n"
     "Here is the user question: {question} \n"
-    "If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant. \n"
+    "If the document contains semantic meaning related to the user question, grade it as relevant. \n"
     "Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question."
 )
 
-# Pytdantic is like zod for data validation, BaseModel is a class that serves as a foundation for defining data models using python type annotations. Data must be in the specified structure in class GradeDocuments that inherits BaseModel class so that all inputs match this data specified.
+# Pytdantic is like zod for data validation, BaseModel is a class that serves as a foundation for defining data models using python type annotations. This goes to the LLM, so that the AI returns a JSON object {"binary_score": "yes/no"} to indicate whether the docs are relevant to user's question.
 class GradeDocuments(BaseModel):
     """Grade documents using a binary score for relevance check."""
     
@@ -93,16 +93,23 @@ class GradeDocuments(BaseModel):
 
 grader_model = init_chat_model("gpt-5-nano", temperature=0)
 
-# The router of data that decides where should the data go next
+# The node 2, it returns a string that acts as a router for the system it tells the system "Go to the generate_answer step or rewrite_question"
 def grade_documents(
     state: MessagesState,
 ) -> Literal["generate_answer", "rewrite_question"]:
     """Determine whether the retrieved documents are relevant to the question."""
-    question = state["messages"][0].content # 1st message is the question
-    context = state["messages"][1].content  # 2nd message is the retrieved Text
+    question = state["messages"][0].content # 1st message is almost always the user's question
+    context = state["messages"][-1].content  # latest message -1 that is the message tool has returned, the search result
     
-    prompt = GRADE_PROMPT.format(question=question, context=context)
+    # # ADD THIS PRINT:
+    # print(f"--- GRADER IS COMPARING ---")
+    # print(f"QUESTION: {question}")
+    # print(f"CONTEXT: {context}")
+    
+    # This is where AI is the judge something like this : "ou are a grader... Here is the retrieved document: meow. Here is the user question: What does Lilian Weng say about types of reward hacking?... Give a binary score"
+    prompt = GRADE_PROMPT.format(question=question, context=context) # Takes GRADE_PROMPT and injects the result of question(user's question), context(tool's search result)
     response = (
+        # Telling the AI "I don't want the converstaion but the JSON object that matches the GradeDocuments class which is binary_score: 'yes' or 'no'. "
         grader_model
         .with_structured_output(GradeDocuments).invoke(
             [{"role": "user", "content": prompt}]
@@ -115,8 +122,94 @@ def grade_documents(
         return "generate_answer"
     else:
         return "rewrite_question" # Fix the question and search again
-    
-    
+# The grader_model and the assistant are the same AI model but doing different things. the grader_model:
+
+# Node - 3 - Rewrite question - giving the response_model node retriever tool's irrelevant docs which indicates the need to improve the original user question.
+
+from langchain_core.messages import HumanMessage # langchain_core.messages imports a class HumanMessage used to represent a message sent by a human user to a chat model.
+
+REWRITE_PROMPT = (
+    "Look at the input and try to reason about the underlying semantic intent / meaning. \n"
+    "Here is the initial question:"
+    "\n ------ \n"
+    "{question}"
+    "\n ------ \n"
+    "Formulate only one improved question:"
+)
+
+def rewrite_question(state: MessagesState):
+    """Rewrite the original user question."""
+    messages = state["messages"]
+    question = messages[0].content # coz messages[0] represents the user's question
+    prompt = REWRITE_PROMPT.format(question=question)
+    response = response_model.invoke([{"role": "user", "content": prompt}])
+    return {"messages": [HumanMessage(content=response.content)]} # content attribute holds the main payload, it is usually a string, but can also be a list of dictionaries for multimodal data.
+
+# Node - 4 generate_answer The llm decides to generate answer if the retriver tool gave the content relevant to the data
+
+GENERATE_PROMPT = (
+    "You are an assistant for question-answering tasks."
+    "Use the foloowing pieces of retrieved context to answer the question."
+    "If you don't know the answer, just say that you don't know. "
+    "Use three sentences maximum and keep the answer concise.\n"
+    "Question: {question} \n"
+    "Context: {context}"
+)
+
+def generate_answer(state: MessagesState):
+    """Generate an answer."""
+    question = state["messages"][0].content
+    context = state["messages"][-1].content
+    prompt =  GENERATE_PROMPT.format(question=question, context=context)
+    response = response_model.invoke([{"role": "user", "content": prompt}])
+    return {"messages": [response]}
+
+
+
+# Assembling the graph
+from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import ToolNode, tools_condition
+
+workflow = StateGraph(MessagesState)
+
+#Define the nodes we will cycle between
+workflow.add_node(generate_query_or_respond)
+workflow.add_node("retrieve", ToolNode([retriever_tool]))
+workflow.add_node(rewrite_question)
+workflow.add_node(generate_answer)
+
+workflow.add_edge(START, "generate_query_or_respond")
+
+
+# Decide whether to retrieve
+workflow.add_conditional_edges(
+    "generate_query_or_respond",
+    # Assess LLM decision (call 'retriever_tool' tool or respond to the user)
+    tools_condition,
+    {
+        # Translate the condition outputs to nodes in our graph
+        "tools": "retrieve",
+        END: END,
+    },
+)
+
+# Edges taken after the action node is called
+workflow.add_conditional_edges(
+    "retrieve",
+    # Assess agent decision
+    grade_documents,
+)
+workflow.add_edge("generate_answer", END)
+workflow.add_edge("rewrite_question", "generate_query_or_respond")
+
+# Compile
+graph = workflow.compile()
+
+
+
+
+
+
 
 
 # The execution
@@ -140,8 +233,8 @@ if __name__ == "__main__": # python standard only run the code inside here if i 
 #Splitting docs
 
     text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder( # counts tokens like cat, ing, tion
-            chunk_size=100,
-            chunk_overlap=50,
+            chunk_size=300,
+            chunk_overlap=100,
         )
     doc_splits = text_splitter.split_documents(docs) # Is Storing chunks of the docs
     print(f"Split into {len(doc_splits)} chunks.")
@@ -165,42 +258,146 @@ if __name__ == "__main__": # python standard only run the code inside here if i 
     # result = retriever_tool.invoke({"query": "types of reward hacking"})
     # print(f"Reward Hacking Result: {result[:1000]}... {len(result)}\n\n")
 
-    # For testing the Node - 1 - generate_query_or_respond 
-    # Can write the content as : "Hello!" or a question about blog posts.
-    test_input = {"messages": [{"role": "user", "content": "What does Lilian Weng say about types of reward hacking?",}]} # Faking the state to see if the function works. Must match with MessagesState. This will generate a tool call Object not a text sentence or an answer.
-    output = generate_query_or_respond(test_input)
-
-    print(" AI Response Test --- ")
-    output["messages"][-1].pretty_print() # We need AI response so [-1] always have AI response at the very end of messages list since langgraph appends messages.
-    # .pretty_print() organizes the messy object to a clean AI response.
+    # Test for Node - 1 - generate_query_or_respond 
     
-    input = {
-        "messages": convert_to_messages(
-            [
+    
+    # Can write the content as : "Hello!" or a question about blog posts.
+    # test_input = {"messages": [{"role": "user", "content": "What does Lilian Weng say about types of reward hacking?",}]} # Faking the state to see if the function works. Must match with MessagesState. This will generate a tool call Object not a text sentence or an answer.
+    # output = generate_query_or_respond(test_input)
+
+    # print(" AI Response Test --- ")
+    # output["messages"][-1].pretty_print() # We need AI response so [-1] always have AI response at the very end of messages list since langgraph appends messages.
+    # #.pretty_print() organizes the messy object to a clean AI response.
+    
+    # # Test for the user's question against tool's content.
+    
+    
+    # input = {
+    #     # convert_to_messages: 1. the role: user asked a question(content) 2. an role:assistant decided to call a tool(retrieve_blog_posts) 3. the role: tool returned "meow" obviously bad data
+    #     "messages": convert_to_messages(
+    #         [
+    #             {
+    #                 "role": "user",
+    #                 "content": "What does Lilian Wang say about types of reward hacking?",
+    #             } # role: User -- Message 0
+    #             ,
+    #             {
+    #                 "role": "assistant", # the response_model
+    #                 "content": "",
+    #                 "tool_calls": [
+    #                     {
+    #                         "id": "1",
+    #                         "name": "retrieve_blog_posts",
+    #                         "args": {"query": "types of reward hacking"},
+    #                     }
+    #                 ],
+    #             } # role:assistant -- The AI Agent - llm - gpt-5-nano, it doesn't know the answer to the user's question so it's taking the tool's(retrieve_blog_posts) help, it translates the user's vague request(the user's question) to a precise search command - {query}
+    #             ,
+    #             {"role": "tool", 
+    #              "content": "reward hacking can be categorized into two types: environment or goal misspecification, and reward tampering", 
+    #              "tool_call_id": "1" ,} # role: tool -- is retrieve_blod_posts. Message -1 the tool message is always the latest thing added.
+    #             ,
+    #         ]
+    #     )
+    # } # 1st input - A froced failure a bad data returned by the tool(content: meow) to test the grader
+    
+    # output = grade_documents(input)
+    # print(f"Check whether the retrieved docs is relevant to the user question ---\n  {output}")
+    
+    # # Test for Rewrite Question
+    
+    # input = {
+    #     "messages": convert_to_messages(
+    #         [
+    #             {
+    #                 "role": "user",
+    #                 "content": "What does Lilian Weng say about types of reward hacking?",
+    #             },
+    #             {
+    #                 "role": "assistant",
+    #                 "content": "",
+    #                 "tool_calls": [
+    #                     {
+    #                         "id": "1",
+    #                         "name": "retrieve_blog_posts",
+    #                         "args": {"query": "types of reward hacking"},
+    #                     }
+    #                 ],
+    #             },
+    #             {"role": "tool", "content": "meow", "tool_call_id": "1"},
+    #         ]
+    #     )
+    # }
+    
+    # response = rewrite_question(input)
+    # print(response["messages"][-1].content)
+    
+    
+
+
+    
+    # Test for generate_answer
+    
+    # input = {
+    #     "messages": convert_to_messages(
+    #         [
+    #             {
+    #                 "role": "user",
+    #                 "content": "What does Lilian Weng say about types of reward hacking?",
+    #             },
+    #             {
+    #                 "role": "assistant",
+    #                 "content": "",
+    #                 "tool_calls": [
+    #                     {
+    #                         "id": "1",
+    #                         "name": "retrieve_blog_posts",
+    #                         "args": {"query": "types of reward hacking"},
+    #                     }
+    #                 ],
+    #             },
+    #             {
+    #                 "role": "tool",
+    #                 "content": "reward hacking can be categorized into two types: environment or goal misspecification, and reward tampering",
+    #                 "tool_call_id": "1",
+    #             },
+    #         ]
+    #     )
+    # }
+    
+    # response = generate_answer(input)
+    # response["messages"][-1].pretty_print()
+    
+    
+    # Visualizing the Graph
+
+    from IPython.display import Image, display
+    from PIL import Image as PILImage
+    import io
+
+    #display(Image(graph.get_graph().draw_mermaid_png())) -- for jupyter notebook
+    graph_bytes = graph.get_graph().draw_mermaid_png()
+    
+    with open("graph.png", "wb") as f:
+       f.write(graph_bytes)
+    
+    
+    
+    # Test of the complete graph
+    
+    for chunk in graph.stream(
+        {
+            "messages": [
                 {
                     "role": "user",
-                    "content": "What does Lilian Wang say about types of reward hacking?",
-                },
-                {
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [
-                        {
-                            "id": "1",
-                            "name": "retrieve_blog_posts",
-                            "args": {"query": "types of reward hacking"},
-                        }
-                    ],
-                },
-                {"role": "tool", "content": "meow", "tool_call_id": "1"},
+                    "content": "What does Lilian Weng say about types of reward hacking?",
+                }
             ]
-        )
-    }
-    
-    output = grade_documents(input)
-    print(f"Check whether the retrieved docs is relevant to the user question ---\n  {output}")
-    
-    
-    
+        }
+    ):
+        for node, update in chunk.items():
+            print("Update from node", node)
+            update["messages"][-1].pretty_print()
+            print("\n\n")
     
 
