@@ -21,7 +21,7 @@ jsonpointer==3.0.0
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 jsonschema_rs==0.29.1
-langchain==1.2.10
+langchain
 langchain-classic==1.0.1
 langchain-community==0.4.1
 langchain-core==1.2.16
@@ -46,8 +46,6 @@ pandas==3.0.1
 pillow==12.1.1
 pipdeptree==2.31.0
 prompt_toolkit==3.0.52
-propcache==0.4.1
-protobuf==6.33.5
 ptyprocess==0.7.0
 pure_eval==0.2.3
 pycparser==3.0
@@ -55,13 +53,9 @@ pydantic==2.12.5
 pydantic-settings==2.13.1
 pydantic_core==2.41.5
 pymilvus==2.6.9
-python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
-python-multipart==0.0.22
-sentence-transformers==5.2.3
-setuptools==69.5.1
+sentence-transformers
 tiktoken==0.12.0
-tokenizers==0.22.2
 torch --extra-index-url https://download.pytorch.org/whl/cpu
 uuid_utils==0.14.1
 uvicorn==0.41.0
