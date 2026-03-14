@@ -344,7 +344,7 @@ if __name__ == "__main__": # python standard only run the code inside here if i 
 
 
     
-    # Test for generate_answer
+    # # Test for generate_answer
     
     # input = {
     #     "messages": convert_to_messages(
@@ -379,15 +379,15 @@ if __name__ == "__main__": # python standard only run the code inside here if i 
     
     # Visualizing the Graph
 
-    from IPython.display import Image, display
-    from PIL import Image as PILImage
-    import io
+    # from IPython.display import Image, display
+    # from PIL import Image as PILImage
+    # import io
 
-    #display(Image(graph.get_graph().draw_mermaid_png())) -- for jupyter notebook
-    graph_bytes = graph.get_graph().draw_mermaid_png()
+    # #display(Image(graph.get_graph().draw_mermaid_png())) -- for jupyter notebook
+    # graph_bytes = graph.get_graph().draw_mermaid_png()
     
-    with open("graph.png", "wb") as f:
-       f.write(graph_bytes)
+    # with open("graph.png", "wb") as f:
+    #    f.write(graph_bytes)
     
     
     
