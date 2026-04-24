@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "main": ".open-next/worker.js",
+  "name": "agentic-app",
+  // Set this to today's date
+  "compatibility_date": "2026-04-21",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+    "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "34aaa97136fa4e4ab7b0c73d04d26ebb",
+    }
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  }
+}

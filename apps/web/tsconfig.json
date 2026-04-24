@@ -1,9 +1,18 @@
 {
-  "extends": "@repo/typescript-config/nextjs.json",
+  "extends": "@total-typescript/tsconfig/bundler/dom/app",
   "compilerOptions": {
+    "incremental": true,
+		"jsx": "preserve",
+    "paths": {
+      "@/*": ["./*"],
+      "@ui/*": ["../../packages/ui/*"],
+			"@repo/ui/*": ["../../packages/ui/*"],
+			"@lib/*": ["../../packages/lib/*"],
+			"@hooks/*": ["../../packages/hooks/*"]
+    },
     "plugins": [
       {
-        "name": "next"
+        "name": "next",
       }
     ],
     "strictNullChecks": true
@@ -12,8 +21,10 @@
     "**/*.ts",
     "**/*.tsx",
     "next-env.d.ts",
-    "next.config.js",
-    ".next/types/**/*.ts"
+    "next.config.ts",
+    ".next/types/**/*.ts",
+    "../../packages/ui/components/table.tsx", "../../packages/ui/components/accordion.tsx",
+    "worker-configuration.d.ts"
   ],
   "exclude": ["node_modules"]
 }
