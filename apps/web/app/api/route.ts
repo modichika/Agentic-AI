@@ -4,7 +4,7 @@ import { connectDb, tasks } from "@repo/db";
 export async function GET() {
   try {
     // Access process.env directly
-    const db = await connectDb(process.env); 
+    const db = await connectDb(process.env as any); 
     const result = await db.select().from(tasks);
 
     return Response.json(result);
