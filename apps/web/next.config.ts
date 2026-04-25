@@ -1,11 +1,11 @@
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 import type { NextConfig } from "next";
+
+// This must run BEFORE the config object is defined
+initOpenNextCloudflareForDev();
 
 const nextConfig: NextConfig = {
   /* config options here */
 };
-
-// if (process.env.NODE_ENV === 'development') {
-//   await setupDevPlatform();
-// }
 
 export default nextConfig;

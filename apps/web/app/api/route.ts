@@ -1,11 +1,13 @@
-import { connectDb, tasks } from "@repo/db";
+import { type Env ,connectDb, tasks } from "@repo/db";
 import { TaskInsertSchema } from "../../../../packages/db/src/schema";
-// Remove: import { env } from "process";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+
 
 export async function POST(request: Request) {
   console.log("POST request received");
   try {
-    const db = await connectDb(process.env as any);
+    const { env } = getCloudflareContext(); 
+    const db = await connectDb(env as Env);
     const body = await request.json();
     
     console.log("Validating data:", body);
@@ -27,8 +29,8 @@ export async function POST(request: Request) {
 
 export async function GET() {
   try {
-    // Access process.env directly
-    const db = await connectDb(process.env as any); 
+    const { env } = getCloudflareContext();
+    const db = await connectDb(env as Env);
     const result = await db.select().from(tasks);
 
     return Response.json(result);

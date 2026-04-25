@@ -21,7 +21,7 @@
     "**/*.ts",
     "**/*.tsx",
     "next-env.d.ts",
-    "next.config.ts",
+    "next.config.mjs",
     ".next/types/**/*.ts",
     "../../packages/ui/components/table.tsx", "../../packages/ui/components/accordion.tsx",
     "worker-configuration.d.ts"
