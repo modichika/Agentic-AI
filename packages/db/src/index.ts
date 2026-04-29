@@ -9,6 +9,8 @@ export interface Env {
 }
 
 export const { tasks } = schema;
+export const { edges } = schema;
+
 export async function connectDb(env: Env) {
   const connectionString = env.HYPERDRIVE?.connectionString || env.DATABASE_URL;
 

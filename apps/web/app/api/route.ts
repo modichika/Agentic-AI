@@ -1,6 +1,8 @@
-import { type Env ,connectDb, tasks } from "@repo/db";
-import { TaskInsertSchema } from "../../../../packages/db/src/schema";
+import { type Env ,connectDb, edges, tasks } from "@repo/db";
+import { TaskInsertSchema, EdgeInsertSchema, PostRequestSchema } from "../../../../packages/db/src/schema";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { eq } from "drizzle-orm";
+
 
 
 export async function POST(request: Request) {
@@ -11,29 +13,35 @@ export async function POST(request: Request) {
     const body = await request.json();
     
     console.log("Validating data:", body);
-    const validatedData = TaskInsertSchema.parse(body);
+    const validatedData = PostRequestSchema.parse(body);
 
-    const result = await db.insert(tasks).values({
+    const [newTask] = await db.insert(tasks).values({
       name: validatedData.name,
       description: validatedData.description,
     }).returning();
 
-    console.log("Insert successful:", result);
-    return Response.json(result);
+    if(newTask?.id && validatedData.target_node_Id){
+      await db.insert(edges).values({
+        source_node_Id: newTask.id,
+        target_node_Id: validatedData.target_node_Id,
+        relationship_type: validatedData.relationship_type ?? "default",
+      });
+    }
+    return Response.json(newTask);
 
-  } catch (error: any) {
-    console.error("Database Error:", error.message);
-    return Response.json({ error: error.message }, { status: 500 });
-  }
+} catch (error: any){
+   return Response.json({ error: error.message }, { status: 400 })
 }
+}
+
 
 export async function GET() {
   try {
     const { env } = getCloudflareContext();
     const db = await connectDb(env as Env);
-    const result = await db.select().from(tasks);
+    const graphData = await db.select({ taskId: tasks.id, taskName: tasks.name, connectedTo: edges.target_node_Id, type: edges.relationship_type }).from(tasks).leftJoin(edges, eq(tasks.id, edges.source_node_Id));
 
-    return Response.json(result);
+    return Response.json(graphData);
   } catch (error) {
     console.error(error);
     return Response.json({ error: "Database connection failed" }, { status: 500 });
